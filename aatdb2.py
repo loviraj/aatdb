@@ -9,6 +9,7 @@ import plotly.express as px
 from PIL import Image
 import numpy as np
 
+
 st.set_page_config(page_title="AAT 2.0 Executive Dashboard", page_icon = "🧞", layout="wide")
 
 COLORS = ["#FFD700","#00C2FF","#FF7F50","#7CFC00","#FF69B4","#8A2BE2"]
@@ -22,7 +23,7 @@ with colA:
     st.caption("**TeachGenie**.ai Analytics | LPU 26th March 2026 - 28th March 2026 | ©2026 **YOM** Private Limited")
 with colB:
     try:
-        st.image(Image.open("AAT-Mascot.png"), width=100)
+        st.image(Image.open("assets/AAT-Mascot.png"), width=100)
     except:
         st.write("🧞")
 
@@ -159,14 +160,13 @@ participation_rate = (participated / total_faculty * 100) if total_faculty else 
 # =========================================================
 # TABS
 # =========================================================
-tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📌 Executive Summary",
     "📊 Participation",
     "⚡ Performance",
     "🏆 Leaderboard",
     "📈 SWOT Analysis",
     "🤖 AI Insights",
-    "🔥 Raw Data"
 ])
 
 # =========================================================
@@ -934,8 +934,3 @@ with tab5:
 """)
 
 
-# =========================================================
-# RAW DATA
-# =========================================================
-with tab6:
-    st.dataframe(df_valid)
