@@ -160,13 +160,14 @@ participation_rate = (participated / total_faculty * 100) if total_faculty else 
 # =========================================================
 # TABS
 # =========================================================
-tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📌 Executive Summary",
     "📊 Participation",
     "⚡ Performance",
     "🏆 Leaderboard",
     "📈 SWOT Analysis",
     "🤖 AI Insights",
+    "🔍 Micro Analysis"
 ])
 
 # =========================================================
@@ -933,4 +934,285 @@ with tab5:
 - 🎯 Overall, the event execution shows **high engagement + efficient completion behavior**
 """)
 
+# =========================================================
+# MICRO ANALYSIS (DISCIPLINE WISE)
+# =========================================================
 
+# -------------------------
+# TAB STATE FIX
+# -------------------------
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "Micro"
+
+with tab6:
+
+    st.session_state.active_tab = "Micro"
+
+    st.subheader("🔍 Micro Analysis (Discipline Level)")
+
+    # =====================================================
+    # DROPDOWN (STATEFUL)
+    # =====================================================
+    disciplines = sorted(df_fac[FAC_DISC].dropna().unique())
+
+    selected_disc = st.selectbox(
+        "Select Discipline",
+        disciplines,
+        key="discipline_selector"
+    )
+
+    # =====================================================
+    # FILTER DATA
+    # =====================================================
+    fac_disc_df = df_fac[df_fac[FAC_DISC] == selected_disc]
+    aat_disc_df = df_aat[df_aat[AAT_DISC] == selected_disc]
+
+    # =====================================================
+    # METRICS
+    # =====================================================
+    total = fac_disc_df[FAC_UID].nunique()
+
+    completed = aat_disc_df[aat_disc_df["Status"] == "Completed"][AAT_UID].nunique()
+    partial = aat_disc_df[aat_disc_df["Status"] == "Partial"][AAT_UID].nunique()
+
+    participated = completed + partial
+    rate = (participated / total * 100) if total else 0
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Total Faculty", total)
+    c2.metric("Participated", participated)
+    c3.metric("Completed", completed)
+    c4.metric("Participation (%)", round(rate, 2))
+
+    st.markdown("---")
+
+    # =====================================================
+    # PREP LONG DATA (IMPORTANT FIX)
+    # =====================================================
+    cat_cols = df_aat.columns[5:30]
+
+    df_long = aat_disc_df.melt(
+        id_vars=[AAT_UID],
+        value_vars=cat_cols,
+        var_name="Category",
+        value_name="Marks"
+    )
+
+    df_long["Marks"] = pd.to_numeric(df_long["Marks"], errors="coerce")
+    df_long = df_long.dropna(subset=["Marks"])
+    df_long = df_long[df_long["Marks"] > 0]
+
+    if not df_long.empty:
+        df_long["Category"] = df_long["Category"].astype(str).str.strip()
+        df_long["RBT"] = df_long["Category"].apply(lambda x: x.split("-")[0])
+        df_long["Type"] = df_long["Category"].apply(lambda x: x.split("-")[1] if "-" in x else "Other")
+
+    # =====================================================
+    # GRAPHS
+    # =====================================================
+    col1, col2 = st.columns(2)
+
+    # -------------------------
+    # PIE (GRADE)
+    # -------------------------
+    with col1:
+        st.markdown(f"### 🏆 Grade Distribution ({selected_disc})")
+
+        if COL_GRADE and not aat_disc_df.empty:
+
+            g = (
+                aat_disc_df[COL_GRADE]
+                .dropna()
+                .astype(str)
+                .value_counts()
+                .reset_index()
+            )
+            g.columns = ["Grade", "Count"]
+
+            st.plotly_chart(
+                px.pie(g, names="Grade", values="Count"),
+                use_container_width=True
+            )
+        else:
+            st.info("No grade data available")
+
+    # -------------------------
+    # HEATMAP (NO PARTICIPATION FIX)
+    # -------------------------
+    with col2:
+        st.markdown(f"### 📊 Performance Heatmap ({selected_disc})")
+
+        try:
+            cat_cols = df_aat.columns[5:30]
+
+            df_long = aat_disc_df.melt(
+                id_vars=[AAT_UID],
+                value_vars=cat_cols,
+                var_name="Category",
+                value_name="Marks"
+            )
+
+            df_long["Category"] = df_long["Category"].astype(str).str.strip()
+            df_long["Marks"] = pd.to_numeric(df_long["Marks"], errors="coerce")
+
+            df_long = df_long.dropna(subset=["Marks"])
+            df_long = df_long[df_long["Marks"] > 0]
+
+            if df_long.empty:
+                st.warning("No data available for heatmap")
+            else:
+                df_long["RBT"] = df_long["Category"].apply(
+                    lambda x: x.split("-")[0].strip() if "-" in x else "Other"
+                )
+                df_long["Type"] = df_long["Category"].apply(
+                    lambda x: x.split("-")[1].strip() if "-" in x else "Other"
+                )
+
+                pivot = (
+                    df_long
+                    .groupby(["RBT", "Type"])["Marks"]
+                    .mean()
+                    .reset_index()
+                )
+
+                heatmap = pivot.pivot(index="RBT", columns="Type", values="Marks")
+
+                RBT_ORDER = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"]
+                TYPE_ORDER = ["MCQ", "Conceptual", "Numerical", "Scenario"]
+
+                heatmap = heatmap.reindex(index=RBT_ORDER)
+                heatmap = heatmap.reindex(columns=TYPE_ORDER)
+
+                # IMPORTANT: keep NaN (no fillna)
+                heatmap = heatmap.iloc[::-1]
+
+                import plotly.graph_objects as go
+                import numpy as np
+
+                z = heatmap.values.astype(float)
+
+                # Mask NaNs for separate coloring
+                z_masked = np.where(np.isnan(z), None, z)
+
+                fig = go.Figure(data=go.Heatmap(
+                    z=z_masked,
+                    x=heatmap.columns,
+                    y=heatmap.index,
+                    colorscale="RdYlGn",
+                    colorbar=dict(title="Performance"),
+                    text=np.where(np.isnan(z), "NP", np.round(z,1)),
+                    texttemplate="%{text}",
+                    hovertemplate="RBT: %{y}<br>Type: %{x}<br>Score: %{z}<extra></extra>"
+                ))
+
+                fig.update_layout(height=420)
+
+                st.plotly_chart(fig, use_container_width=True)
+
+                # LEGEND
+                st.markdown("""
+**Legend:**
+- 🟢 High Score → Strong performance  
+- 🔴 Low Score → Weak performance  
+- ⚪ NP → No Participation (Training Required)
+""")
+
+        except Exception as e:
+            st.error("Heatmap rendering failed")
+            st.write(str(e))
+
+    # =====================================================
+    # INSIGHTS + TRAINING 
+    # =====================================================
+    st.markdown(f"### 💡 Insights for {selected_disc}")
+
+    if not df_long.empty:
+
+        avg_scores = (
+            df_long.groupby("Category")["Marks"]
+            .mean()
+            .sort_values(ascending=False)
+        )
+
+        strengths = avg_scores.head(2)
+        weaknesses = avg_scores.tail(2)
+
+        # Detect NO PARTICIPATION categories
+        all_categories = df_aat.columns[5:30]
+        observed_categories = set(df_long["Category"])
+        no_participation = [c for c in all_categories if c not in observed_categories]
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("#### 💪 Strengths")
+            for k,v in strengths.items():
+                st.markdown(f"- **{k}** → {v:.1f}")
+
+        with col2:
+            st.markdown("#### ⚠ Weaknesses")
+            for k,v in weaknesses.items():
+                st.markdown(f"- **{k}** → {v:.1f}")
+
+        # =====================================================
+        # 🎯 TRAINING RECOMMENDATIONS (SMART)
+        # =====================================================
+        st.markdown("### 🎯 Training Recommendations")
+
+        # Weak performance
+        for cat, val in weaknesses.items():
+
+            rbt = cat.split("-")[0]
+            qtype = cat.split("-")[1] if "-" in cat else ""
+
+            st.markdown(f"""
+- Improve **{rbt} ({qtype})**
+  - Focus on conceptual clarity
+  - Introduce guided + timed practice
+  - Conduct targeted workshops
+""")
+
+        # No participation
+        if no_participation:
+            st.markdown("#### ⚪ No Participation Areas (Critical)")
+
+            for cat in no_participation[:5]:  # limit for readability
+                rbt = cat.split("-")[0]
+                qtype = cat.split("-")[1] if "-" in cat else ""
+
+                st.markdown(f"""
+- **{cat}**
+  - No faculty attempted this category
+  - Introduce mandatory exposure sessions
+  - Conduct foundational training in **{rbt} ({qtype})**
+""")
+
+    # =====================================================
+    # NON-PARTICIPANTS
+    # =====================================================
+    st.markdown(f"### 🚫 Non-Participating Faculty ({selected_disc})")
+
+    non_participants = fac_disc_df[
+        ~fac_disc_df[FAC_UID].isin(
+            aat_disc_df[aat_disc_df["Status"] != "Not Participated"][AAT_UID]
+        )
+    ]
+
+    cols = [FAC_UID]
+    if "Name" in fac_disc_df.columns:
+        cols.append("Name")
+
+    non_participants = non_participants[cols]
+
+    st.dataframe(non_participants, use_container_width=True, hide_index=True)
+
+    # DOWNLOAD
+    csv = non_participants.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        "⬇ Download List",
+        csv,
+        f"{selected_disc}_non_participants.csv",
+        "text/csv"
+    )
