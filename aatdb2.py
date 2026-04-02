@@ -234,19 +234,17 @@ with tab0:
     avg_score = pd.to_numeric(df_valid[df_valid.columns[29]], errors="coerce").mean()
     avg_delay = df_valid["delay_minutes"].mean()
 
-    c1, c2, c3, c4 = st.columns(4)
+    # ✅ NEW METRICS (ADDED)
+    percent_completed = (completed / total_faculty * 100) if total_faculty else 0
 
-    c1.metric("Participants", total_participants)
-    c2.metric("Completion Rate", f"{completion_rate:.2f}%")
-    c3.metric("Avg Score", f"{avg_score:.2f}")
-    c4.metric("Avg Completion Time", f"{avg_delay:.1f} mins")
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
 
-    st.markdown("""
-**Insight:**  
-The institution demonstrates **strong engagement momentum**, however completion efficiency and performance dispersion indicate **structured intervention opportunities**.
-""")
-
-    st.markdown("---")
+    c1.metric("Total Faculty", total_faculty)
+    c2.metric("Participated", participated)
+    c3.metric("Completed", completed)
+    c4.metric("% Completed", f"{percent_completed:.2f}%")
+    c5.metric("Avg Score", f"{avg_score:.2f}")
+    c6.metric("Avg Completion Time", f"{avg_delay:.1f} mins")
 
     # =====================================================
     # CHAPTER 2: PARTICIPATION INTELLIGENCE
