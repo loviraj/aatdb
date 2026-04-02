@@ -1,6 +1,10 @@
 streamlit
 pandas
 plotly
-openpyxl
 numpy
-scipy
+openpyxl
+python-dotenv
+kaleido
+reportlab
+Pillow
+openai
