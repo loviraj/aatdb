@@ -1,0 +1,344 @@
+# =========================================================
+# LOAD
+# =========================================================
+@st.cache_data
+def load_data():
+    df = pd.read_excel("AAT-Data-28.03.2026.xlsx")
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+df = load_data()
+
+# =========================================================
+# SAFE COLUMN DETECTOR
+# =========================================================
+def get_col_safe(df, index):
+    return df.columns[index] if len(df.columns) > index else None
+
+# =========================================================
+# COLUMN LOCK (ROBUST + FUTURE-PROOF)
+# =========================================================
+COL_UID = get_col_safe(df, 1)
+COL_NAME = get_col_safe(df, 2)
+COL_REG_COUNT = get_col_safe(df, 4)
+COL_TOTAL = get_col_safe(df, 29)   # 🔥 CRITICAL FIX
+COL_REG_TIME = get_col_safe(df, 31)
+COL_SUB_TIME = get_col_safe(df, 32)
+
+COL_DISC = None
+COL_CAT = None
+COL_GRADE = None
+COL_MARKS = None
+
+for col in df.columns:
+    name = str(col).lower()
+
+    if "discipline" in name:
+        COL_DISC = col
+
+    elif "category" in name:
+        COL_CAT = col
+
+    elif "grade" in name:
+        COL_GRADE = col
+
+    elif "mark" in name or "score" in name:
+        COL_MARKS = col
+
+# =========================================================
+# FINAL MARKS COLUMN RESOLUTION (CRITICAL)
+# =========================================================
+# Priority: detected marks column → fallback to COL_TOTAL
+FINAL_MARKS_COL = COL_MARKS if COL_MARKS else COL_TOTAL
+
+# Safety check
+if FINAL_MARKS_COL is None:
+    st.error("❌ Unable to detect Marks/Score column. Check dataset format.")
+    st.stop()
+
+# Create unified numeric marks column (USE THIS EVERYWHERE)
+df["Marks"] = pd.to_numeric(df[FINAL_MARKS_COL], errors="coerce")
+
+# =========================================================
+# CLEAN
+# =========================================================
+df = df[df[COL_UID].notna()]
+
+df[COL_REG_TIME] = pd.to_datetime(df[COL_REG_TIME], errors="coerce")
+df[COL_SUB_TIME] = pd.to_datetime(df[COL_SUB_TIME], errors="coerce")
+
+# Event window
+df = df[
+    (df[COL_REG_TIME] >= "2026-03-26 10:00") &
+    (df[COL_REG_TIME] <= "2026-03-28 10:00")
+]
+
+df["completed"] = df[COL_REG_COUNT] == 3
+
+df_valid = df[df[COL_REG_TIME].notna()].copy()
+
+df_valid["delay_minutes"] = (
+    (df_valid[COL_SUB_TIME] - df_valid[COL_REG_TIME]).dt.total_seconds()/60
+)
+
+# =========================================================
+# FEATURE ENGINEERING (CRITICAL FIX)
+# =========================================================
+
+# Ensure datetime columns are valid
+df_valid = df_valid.copy()
+
+df_valid[COL_REG_TIME] = pd.to_datetime(df_valid[COL_REG_TIME], errors="coerce")
+df_valid[COL_SUB_TIME] = pd.to_datetime(df_valid[COL_SUB_TIME], errors="coerce")
+
+# Drop rows where registration time is missing
+df_valid = df_valid[df_valid[COL_REG_TIME].notna()]
+
+# SAFE creation of date & hour
+df_valid["date"] = df_valid[COL_REG_TIME].dt.date
+df_valid["hour"] = df_valid[COL_REG_TIME].dt.hour
+
+# Delay
+df_valid["delay_minutes"] = (
+    (df_valid[COL_SUB_TIME] - df_valid[COL_REG_TIME])
+    .dt.total_seconds() / 60
+)
+
+# Safety fallback (never break charts)
+if "date" not in df_valid.columns:
+    df_valid["date"] = "Unknown"
+
+if "hour" not in df_valid.columns:
+    df_valid["hour"] = 0
+
+# =========================================================
+# GLOBAL PARTICIPATION METRICS (SHARED ACROSS TABS)
+# =========================================================
+
+df_fac = pd.read_excel("FacultyDetails.xlsx")
+df_aat = pd.read_excel("AAT-Data-28.03.2026.xlsx")
+
+df_fac.columns = [str(c).strip() for c in df_fac.columns]
+df_aat.columns = [str(c).strip() for c in df_aat.columns]
+
+# Column mapping
+FAC_UID = df_fac.columns[2]   # Column C
+AAT_UID = df_aat.columns[1]   # Column B
+AAT_REG = df_aat.columns[4]   # Column E
+
+# Clean UID
+df_fac[FAC_UID] = pd.to_numeric(df_fac[FAC_UID], errors="coerce")
+df_aat[AAT_UID] = pd.to_numeric(df_aat[AAT_UID], errors="coerce")
+
+df_fac = df_fac.dropna(subset=[FAC_UID])
+df_aat = df_aat.dropna(subset=[AAT_UID])
+
+df_fac[FAC_UID] = df_fac[FAC_UID].astype(int)
+df_aat[AAT_UID] = df_aat[AAT_UID].astype(int)
+
+df_fac = df_fac.drop_duplicates(subset=[FAC_UID])
+df_aat = df_aat.drop_duplicates(subset=[AAT_UID])
+
+# Registration logic
+df_aat[AAT_REG] = pd.to_numeric(df_aat[AAT_REG], errors="coerce").fillna(0)
+
+df_aat["Status"] = df_aat[AAT_REG].apply(
+    lambda x: "Completed" if x == 3 else
+              "Partial" if x in [1, 2] else
+              "Not Participated"
+)
+
+# Metrics
+total_faculty = df_fac[FAC_UID].nunique()
+completed = df_aat[df_aat["Status"] == "Completed"][AAT_UID].nunique()
+partial = df_aat[df_aat["Status"] == "Partial"][AAT_UID].nunique()
+participated = completed + partial
+
+participation_rate = (participated / total_faculty * 100) if total_faculty else 0
+
+
+# =========================================================
+# TABS
+# =========================================================
+tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📌 Executive Summary",
+    "📊 Participation",
+    "⚡ Performance",
+    "🏆 Leaderboard",
+    "📈 SWOT Analysis",
+    "🤖 AI Insights",
+    "🔍 Micro Analysis"
+])
+
+# =========================================================
+# EXECUTIVE SUMMARY (CHANCELLOR EDITION)
+# =========================================================
+with tab0:
+
+    st.markdown("# 🎓 Executive Intelligence Brief")
+    st.caption("Assess-A-Thon 2.0 | Institutional Capability Analytics | Powered by TeachGenie")
+
+    # =====================================================
+    # CHAPTER 1: INSTITUTIONAL PULSE
+    # =====================================================
+    st.markdown("## 📊 Chapter 1: Institutional Pulse")
+
+    total_participants = df_valid[COL_UID].nunique()
+    completion_rate = df_valid["completed"].mean() * 100
+    avg_score = pd.to_numeric(df_valid[df_valid.columns[29]], errors="coerce").mean()
+    avg_delay = df_valid["delay_minutes"].mean()
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Participants", total_participants)
+    c2.metric("Completion Rate", f"{completion_rate:.2f}%")
+    c3.metric("Avg Score", f"{avg_score:.2f}")
+    c4.metric("Avg Completion Time", f"{avg_delay:.1f} mins")
+
+    st.markdown("""
+**Insight:**  
+The institution demonstrates **strong engagement momentum**, however completion efficiency and performance dispersion indicate **structured intervention opportunities**.
+""")
+
+    st.markdown("---")
+
+    # =====================================================
+    # CHAPTER 2: PARTICIPATION INTELLIGENCE
+    # =====================================================
+    st.markdown("## 📈 Chapter 2: Participation Intelligence")
+
+    discipline_part = (
+        df_valid.groupby(COL_DISC)[COL_UID]
+        .nunique()
+        .sort_values(ascending=False)
+        .reset_index(name="Participants")
+    )
+
+    st.plotly_chart(
+        px.bar(
+            discipline_part,
+            x=COL_DISC,
+            y="Participants",
+            color="Participants",
+            color_continuous_scale="Turbo"
+        ),
+        use_container_width=True
+    )
+
+    st.markdown("""
+**Key Observations:**
+- Participation is **uneven across disciplines**
+- High-performing disciplines act as **engagement anchors**
+- Low participation areas signal **adoption resistance or awareness gaps**
+""")
+
+    st.markdown("---")
+
+    # =====================================================
+    # CHAPTER 3: PERFORMANCE INTELLIGENCE
+    # =====================================================
+    st.markdown("## 📊 Chapter 3: Performance Intelligence")
+
+    df_perf = df_valid.copy()
+    df_perf["Score"] = pd.to_numeric(df_perf[COL_TOTAL], errors="coerce")
+
+    st.plotly_chart(
+        px.histogram(df_perf, x="Score", nbins=30),
+        use_container_width=True
+    )
+
+    st.markdown("""
+**Key Observations:**
+- Performance follows a **near-normal distribution**
+- Presence of **long tail indicates capability variance**
+- High performers exist but **scalability of excellence is limited**
+""")
+
+    st.markdown("---")
+
+    # =====================================================
+    # CHAPTER 4: CAPABILITY GAPS & RISKS
+    # =====================================================
+    st.markdown("## ⚠️ Chapter 4: Capability Gaps & Risks")
+
+    cat_cols = df_valid.columns[5:30]
+
+    df_long = df_lb.melt(
+    id_vars=[COL_UID, COL_NAME, COL_DISC],
+    value_vars=cat_cols,
+    var_name="Category",
+    value_name="Score_TEMP"   
+    )
+
+    df_long["Score_TEMP"] = pd.to_numeric(df_long["Score_TEMP"], errors="coerce")
+
+    df_long = df_long.dropna(subset=["Score_TEMP"])
+    df_long = df_long[df_long["Score_TEMP"] > 0]
+
+    weak_areas = (
+        df_long.groupby("Category")["Score_TMP"]
+        .mean()
+        .sort_values()
+        .head(5)
+    )
+
+    st.markdown("### 🔻 Critical Weak Areas")
+
+    for k, v in weak_areas.items():
+        st.markdown(f"- **{k}** → {v:.2f}")
+
+    st.markdown("""
+**Risk Signals:**
+- Cognitive depth gaps in higher-order thinking (Analyze, Evaluate)
+- Uneven exposure to application-based problem solving
+- Partial completion indicates **attention fatigue / UX friction**
+""")
+
+    st.markdown("---")
+
+    # =====================================================
+    # CHAPTER 5: STRATEGIC BUSINESS PROPOSITION
+    # =====================================================
+    st.markdown("## 🚀 Chapter 5: Strategic Business Proposition")
+
+    st.markdown("""
+### 🧠 TeachGenie Opportunity Layer
+
+Assess-A-Thon is not just an assessment—it is a **faculty intelligence system**.
+
+### 🎯 What This Enables:
+
+- Continuous **faculty capability mapping**
+- AI-driven **training need analysis**
+- Real-time **intervention tracking**
+- Institutional **benchmarking engine**
+
+---
+
+### 💡 Proposed Transformation:
+
+| Layer | Current State | Future State |
+|------|-------------|-------------|
+| Assessment | Event-based | Continuous Intelligence |
+| Training | Generic | AI-Personalized |
+| Evaluation | Static | Real-time adaptive |
+| Decision | Reactive | Predictive |
+
+---
+
+### 📈 Business Impact:
+
+- ↑ Faculty Effectiveness  
+- ↑ Student Learning Outcomes  
+- ↓ Training Cost Leakage  
+- ↑ Institutional Ranking Readiness  
+
+---
+
+### 🏁 Final Proposition:
+
+**Deploy TeachGenie as an Institutional Intelligence Platform**
+
+→ Convert Assess-A-Thon into a **continuous capability engine**  
+→ Build LPU as a **data-driven academic excellence model**
+""")

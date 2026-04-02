@@ -1,6 +1,5 @@
 # edutut/tgassess/dashboard/aatdb.py 
 # --------- AAT Executive Dashboard ----------
-# FROZEN 31.03.2026 15:30 Hours
 
 
 
@@ -10,23 +9,7 @@ import plotly.express as px
 from PIL import Image
 import numpy as np
 
-import os
-from dotenv import load_dotenv
-from openai import OpenAI
 
-# =====================================================
-# LOAD ENV (LOCAL)
-# =====================================================
-load_dotenv()
-
-api_key = os.getenv("OPENAI_API_KEY")
-
-client = OpenAI(api_key=api_key) if api_key else None
-
-
-# =========================================================
-# PAGE CONFIG
-# =========================================================
 st.set_page_config(page_title="AAT 2.0 Executive Dashboard", page_icon = "🧞", layout="wide")
 
 COLORS = ["#FFD700","#00C2FF","#FF7F50","#7CFC00","#FF69B4","#8A2BE2"]
@@ -50,26 +33,19 @@ with colB:
 @st.cache_data
 def load_data():
     df = pd.read_excel("AAT-Data-28.03.2026.xlsx")
-    df.columns = [str(c).strip() for c in df.columns]
+    df.columns = [c.strip() for c in df.columns]
     return df
 
 df = load_data()
 
 # =========================================================
-# SAFE COLUMN DETECTOR
+# COLUMN LOCK
 # =========================================================
-def get_col_safe(df, index):
-    return df.columns[index] if len(df.columns) > index else None
-
-# =========================================================
-# COLUMN LOCK (ROBUST + FUTURE-PROOF)
-# =========================================================
-COL_UID = get_col_safe(df, 1)
-COL_NAME = get_col_safe(df, 2)
-COL_REG_COUNT = get_col_safe(df, 4)
-COL_TOTAL = get_col_safe(df, 29)   # 🔥 CRITICAL FIX
-COL_REG_TIME = get_col_safe(df, 31)
-COL_SUB_TIME = get_col_safe(df, 32)
+COL_UID = df.columns[1]
+COL_NAME = df.columns[2] if len(df.columns) > 2 else None
+COL_REG_COUNT = df.columns[4]
+COL_REG_TIME = df.columns[31]
+COL_SUB_TIME = df.columns[32]
 
 COL_DISC = None
 COL_CAT = None
@@ -77,33 +53,11 @@ COL_GRADE = None
 COL_MARKS = None
 
 for col in df.columns:
-    name = str(col).lower()
-
-    if "discipline" in name:
-        COL_DISC = col
-
-    elif "category" in name:
-        COL_CAT = col
-
-    elif "grade" in name:
-        COL_GRADE = col
-
-    elif "mark" in name or "score" in name:
-        COL_MARKS = col
-
-# =========================================================
-# FINAL MARKS COLUMN RESOLUTION (CRITICAL)
-# =========================================================
-# Priority: detected marks column → fallback to COL_TOTAL
-FINAL_MARKS_COL = COL_MARKS if COL_MARKS else COL_TOTAL
-
-# Safety check
-if FINAL_MARKS_COL is None:
-    st.error("❌ Unable to detect Marks/Score column. Check dataset format.")
-    st.stop()
-
-# Create unified numeric marks column (USE THIS EVERYWHERE)
-df["Marks"] = pd.to_numeric(df[FINAL_MARKS_COL], errors="coerce")
+    name = col.lower()
+    if "discipline" in name: COL_DISC = col
+    elif "category" in name: COL_CAT = col
+    elif "grade" in name: COL_GRADE = col
+    elif "mark" in name or "score" in name: COL_MARKS = col
 
 # =========================================================
 # CLEAN
@@ -116,7 +70,7 @@ df[COL_SUB_TIME] = pd.to_datetime(df[COL_SUB_TIME], errors="coerce")
 # Event window
 df = df[
     (df[COL_REG_TIME] >= "2026-03-26 10:00") &
-    (df[COL_REG_TIME] <= "2026-03-29 23:00")
+    (df[COL_REG_TIME] <= "2026-03-28 10:00")
 ]
 
 df["completed"] = df[COL_REG_COUNT] == 3
@@ -162,7 +116,7 @@ if "hour" not in df_valid.columns:
 # =========================================================
 
 df_fac = pd.read_excel("FacultyDetails.xlsx")
-df_aat = pd.read_excel("AAT-Data-31.03.2026.xlsx")
+df_aat = pd.read_excel("AAT-Data-28.03.2026.xlsx")
 
 df_fac.columns = [str(c).strip() for c in df_fac.columns]
 df_aat.columns = [str(c).strip() for c in df_aat.columns]
@@ -217,177 +171,46 @@ tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # =========================================================
-# EXECUTIVE SUMMARY 
+# EXECUTIVE SUMMARY
 # =========================================================
 with tab0:
 
-    st.markdown("# 🎓 Executive Intelligence Brief")
-    st.caption("Assess-A-Thon 2.0 | Institutional Capability Analytics | Powered by TeachGenie")
+    st.subheader("📌 Executive Summary")
 
-    # =====================================================
-    # CHAPTER 1: INSTITUTIONAL PULSE
-    # =====================================================
-    st.markdown("## 📊 Chapter 1: Institutional Pulse")
-
-    total_participants = df_valid[COL_UID].nunique()
-    completion_rate = df_valid["completed"].mean() * 100
-    avg_score = pd.to_numeric(df_valid[df_valid.columns[29]], errors="coerce").mean()
+    total = df_valid[COL_UID].nunique()
+    completion = df_valid["completed"].mean()*100 if len(df_valid) else 0
     avg_delay = df_valid["delay_minutes"].mean()
 
-    c1, c2, c3, c4 = st.columns(4)
+    peak_hour = df_valid["hour"].value_counts().idxmax() if "hour" in df_valid else None
 
-    c1.metric("Participants", total_participants)
-    c2.metric("Completion Rate", f"{completion_rate:.2f}%")
-    c3.metric("Avg Score", f"{avg_score:.2f}")
-    c4.metric("Avg Completion Time", f"{avg_delay:.1f} mins")
+    st.markdown("### 📊 Participation Insights")
 
-    st.markdown("""
-**Insight:**  
-The institution demonstrates **strong engagement momentum**, however completion efficiency and performance dispersion indicate **structured intervention opportunities**.
+    st.markdown(f"""
+- **Total Faculty:** {total_faculty}
+- **Participated:** {participated} ({participation_rate:.2f}%)
+- **Completed:** {completed}
+- **Partially Completed:** {partial}
+
+**Key Insight:**
+- Participation is at **{participation_rate:.2f}%**, indicating {'strong' if participation_rate > 70 else 'moderate' if participation_rate > 40 else 'low'} engagement.
+- A significant portion of participants are in **partial completion**, suggesting drop-offs during the assessment.
+
+**Action Recommendation:**
+- Focus on converting **partial participants → completed**
+- Introduce nudges, reminders, and shorter assessment cycles
 """)
 
-    st.markdown("---")
-
-    # =====================================================
-    # CHAPTER 2: PARTICIPATION INTELLIGENCE
-    # =====================================================
-    st.markdown("## 📈 Chapter 2: Participation Intelligence")
-
-    discipline_part = (
-        df_valid.groupby(COL_DISC)[COL_UID]
-        .nunique()
-        .sort_values(ascending=False)
-        .reset_index(name="Participants")
-    )
-
-    st.plotly_chart(
-        px.bar(
-            discipline_part,
-            x=COL_DISC,
-            y="Participants",
-            color="Participants",
-            color_continuous_scale="Turbo"
-        ),
-        use_container_width=True
-    )
-
-    st.markdown("""
-**Key Observations:**
-- Participation is **uneven across disciplines**
-- High-performing disciplines act as **engagement anchors**
-- Low participation areas signal **adoption resistance or awareness gaps**
+    st.markdown("### ⚡ Performance Insights")
+    st.markdown(f"""
+- Average submission delay was **{avg_delay:.1f} minutes**
+- Majority participants fall in **mid-to-high performance bands**
 """)
 
-    st.markdown("---")
-
-    # =====================================================
-    # CHAPTER 3: PERFORMANCE INTELLIGENCE
-    # =====================================================
-    st.markdown("## 📊 Chapter 3: Performance Intelligence")
-
-    df_perf = df_valid.copy()
-    df_perf["Score"] = pd.to_numeric(df_perf[COL_TOTAL], errors="coerce")
-
-    st.plotly_chart(
-        px.histogram(df_perf, x="Score", nbins=30),
-        use_container_width=True
-    )
-
+    st.markdown("### 📈 Behavioral Insights")
     st.markdown("""
-**Key Observations:**
-- Performance follows a **near-normal distribution**
-- Presence of **long tail indicates capability variance**
-- High performers exist but **scalability of excellence is limited**
-""")
-
-    st.markdown("---")
-
-    # =====================================================
-    # CHAPTER 4: CAPABILITY GAPS & RISKS
-    # =====================================================
-    st.markdown("## ⚠️ Chapter 4: Capability Gaps & Risks")
-
-    cat_cols = df_valid.columns[5:30]
-
-    df_es = df_valid.copy()
-
-    df_long = df_es.melt(
-        id_vars=[COL_UID],
-        value_vars=cat_cols,
-        var_name="Category",
-        value_name="Score_TEMP"
-    )
-
-    df_long["Score_TEMP"] = pd.to_numeric(df_long["Score_TEMP"], errors="coerce")
-    df_long = df_long.dropna(subset=["Score_TEMP"])
-    df_long = df_long[df_long["Score_TEMP"] > 0]
-
-    weak_areas = (
-        df_long.groupby("Category")["Score_TEMP"]
-        .mean()
-        .sort_values()
-        .head(5)
-    )
-
-    st.markdown("### 🔻 Critical Weak Areas")
-
-    for k, v in weak_areas.items():
-        st.markdown(f"- **{k}** → {v:.2f}")
-
-    st.markdown("""
-**Risk Signals:**
-- Cognitive depth gaps in higher-order thinking (Analyze, Evaluate)
-- Uneven exposure to application-based problem solving
-- Partial completion indicates **attention fatigue / UX friction**
-""")
-
-    st.markdown("---")
-
-    # =====================================================
-    # CHAPTER 5: STRATEGIC BUSINESS PROPOSITION
-    # =====================================================
-    st.markdown("## 🚀 Chapter 5: Strategic Business Proposition")
-
-    st.markdown("""
-### 🧠 TeachGenie Opportunity Layer
-
-Assess-A-Thon is not just an assessment—it is a **faculty intelligence system**.
-
-### 🎯 What This Enables:
-
-- Continuous **faculty capability mapping**
-- AI-driven **training need analysis**
-- Real-time **intervention tracking**
-- Institutional **benchmarking engine**
-
----
-
-### 💡 Proposed Transformation:
-
-| Layer | Current State | Future State |
-|------|-------------|-------------|
-| Assessment | Event-based | Continuous Intelligence |
-| Training | Generic | AI-Personalized |
-| Evaluation | Static | Real-time adaptive |
-| Decision | Reactive | Predictive |
-
----
-
-### 📈 Business Impact:
-
-- ↑ Faculty Effectiveness  
-- ↑ Student Learning Outcomes  
-- ↓ Training Cost Leakage  
-- ↑ Institutional Ranking Readiness  
-
----
-
-### 🏁 Final Proposition:
-
-**Deploy TeachGenie as an Institutional Intelligence Platform**
-
-→ Convert Assess-A-Thon into a **continuous capability engine**  
-→ Build LPU as a **data-driven academic excellence model**
+- Participation shows clustered activity during key hours
+- Faster submissions correlate with higher scores
+- Engagement consistency indicates strong task clarity
 """)
 
 # =========================================================
@@ -484,41 +307,25 @@ with tab1:
             use_container_width=True
         )
 
-    # =====================================================
-    # PARTICIPATION RATE (FIXED LABELS + STRAIGHT AXIS)
-    # =====================================================
-    st.subheader("📈 Participation Rate by Discipline (%)")
+        # =====================================================
+        # 📈 PARTICIPATION RATE BY DISCIPLINE
+        # =====================================================
+        st.subheader("📈 Participation Rate by Discipline (%)")
 
-    merged["Rate (%)"] = (
-        merged["Participated"] / merged["Total"] * 100
-    ).round(2)
+        merged["Rate (%)"] = (
+            merged["Participated"] / merged["Total"] * 100
+        ).round(2)
 
-    fig = px.bar(
-        merged,
-        x=FAC_DISC,
-        y="Rate (%)",
-        color="Rate (%)",
-        color_continuous_scale="Turbo"
-    )
-
-    # ✅ FORCE LABELS FOR ALL BARS
-    fig.update_traces(
-        text=[f"{v:.2f}%" for v in merged["Rate (%)"]],
-        textposition="outside",
-        cliponaxis=False   # 🔥 ensures labels outside chart are still shown
-    )
-
-    # ✅ MAKE X-AXIS STRAIGHT (NO TILT)
-    fig.update_layout(
-        xaxis_tickangle=90,   # 🔥 removes tilt
-        xaxis_title="Discipline",
-        yaxis_title="Participation (%)",
-        uniformtext_minsize=8,
-        uniformtext_mode='show',  # 🔥 forces display
-        margin=dict(t=60, b=120)  # 🔥 prevents cutoff of long names
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(
+            px.bar(
+                merged,
+                x=FAC_DISC,
+                y="Rate (%)",
+                color="Rate (%)",
+                color_continuous_scale="Turbo"
+            ),
+            use_container_width=True
+        )
 
     # =====================================================
     # 📉 FUNNEL
@@ -760,7 +567,7 @@ with tab2:
         st.warning("No delay data available")
 
 # =========================================================
-# LEADERBOARD (FINAL - CLEAN + BUG-FREE)
+# LEADERBOARD
 # =========================================================
 with tab3:
 
@@ -775,13 +582,13 @@ with tab3:
     df_lb = df_valid.copy()
 
     # -------------------------------
-    # OVERALL SCORE (SOURCE OF TRUTH)
+    # OVERALL SCORE (CORRECT)
     # -------------------------------
     df_lb["Total Marks"] = pd.to_numeric(df_lb[COL_TOTAL], errors="coerce")
     df_lb = df_lb.dropna(subset=["Total Marks"])
 
     # -------------------------------
-    # 🥇 TOP 3 CHAMPIONS (FIXED)
+    # 🥇 TOP 3 CHAMPIONS
     # -------------------------------
     st.markdown("### 🏆 Top 3 Champions")
 
@@ -837,20 +644,20 @@ with tab3:
     )
 
     # -------------------------------
-    # CATEGORY ANALYSIS (FIXED MELT)
+    # CATEGORY ANALYSIS (MELT)
     # -------------------------------
     df_long = df_lb.melt(
         id_vars=[COL_UID, COL_NAME, COL_DISC],
         value_vars=cat_cols,
         var_name="Category",
-        value_name="Score_TEMP"   # 🔥 FIXED
+        value_name="Marks"
     )
 
     df_long["Category"] = df_long["Category"].astype(str).str.strip()
-    df_long["Score_TEMP"] = pd.to_numeric(df_long["Score_TEMP"], errors="coerce")
+    df_long["Marks"] = pd.to_numeric(df_long["Marks"], errors="coerce")
 
-    df_long = df_long.dropna(subset=["Score_TEMP"])
-    df_long = df_long[df_long["Score_TEMP"] > 0]
+    df_long = df_long.dropna(subset=["Marks"])
+    df_long = df_long[df_long["Marks"] > 0]
 
     if df_long.empty:
         st.warning("No category-wise data available")
@@ -891,7 +698,7 @@ with tab3:
 
                 with st.expander(f"📘 {rbt}-{t}"):
 
-                    top3 = sub_df.sort_values("Score_TEMP", ascending=False).head(3)
+                    top3 = sub_df.sort_values("Marks", ascending=False).head(3)
                     cols = st.columns(3)
 
                     for i, (_, row) in enumerate(top3.iterrows()):
@@ -911,7 +718,7 @@ with tab3:
                                 <b>{row.get(COL_NAME,'N/A')}</b><br>
                                 <small>{row[COL_UID]}</small><br><br>
                                 🎓 {row.get(COL_DISC,'N/A')}<br>
-                                📊 <b>{round(row['Score_TEMP'],2)}</b>
+                                📊 <b>{round(row['Marks'],2)}</b>
                             </div>
                             """, unsafe_allow_html=True)
 
@@ -951,6 +758,7 @@ with tab3:
         hide_index=True
     )
 
+
 # =========================================================
 # SWOT ANALYSIS 
 # =========================================================
@@ -959,7 +767,7 @@ with tab4:
     st.subheader("📈 SWOT Analysis")
 
     # =====================================================
-    # PREP DATA (WIDE → LONG)df_long.groupby("Category")["Score_TEMP"]
+    # PREP DATA (WIDE → LONG)
     # =====================================================
     cat_cols = df_valid.columns[5:30]
 
@@ -969,21 +777,17 @@ with tab4:
         id_vars=[COL_UID],
         value_vars=cat_cols,
         var_name="Category",
-        value_name="Score_TEMP"
+        value_name="Marks"
     )
-
-    df_long["Score_TEMP"] = pd.to_numeric(df_long["Score_TEMP"], errors="coerce")
-    df_long = df_long.dropna(subset=["Score_TEMP"])
-    df_long = df_long[df_long["Score_TEMP"] > 0]
 
     # -----------------------------
     # CLEANING
     # -----------------------------
     df_long["Category"] = df_long["Category"].astype(str).str.strip()
-    df_long["Score_TEMP"] = pd.to_numeric(df_long["Score_TEMP"], errors="coerce")
+    df_long["Marks"] = pd.to_numeric(df_long["Marks"], errors="coerce")
 
-    df_long = df_long.dropna(subset=["Score_TEMP"])
-    df_long = df_long[df_long["Score_TEMP"] > 0]
+    df_long = df_long.dropna(subset=["Marks"])
+    df_long = df_long[df_long["Marks"] > 0]
 
     # Remove any accidental "overall"
     df_long = df_long[
@@ -1014,12 +818,12 @@ with tab4:
 
     pivot = (
         df_long
-        .groupby(["RBT", "Type"])["Score_TEMP"]
+        .groupby(["RBT", "Type"])["Marks"]
         .mean()
         .reset_index()
     )
 
-    heatmap = pivot.pivot(index="RBT", columns="Type", values="Score_TEMP")
+    heatmap = pivot.pivot(index="RBT", columns="Type", values="Marks")
 
     # Apply ordering safely
     heatmap = heatmap.reindex(index=RBT_ORDER)
@@ -1054,7 +858,7 @@ with tab4:
 
     avg_scores = (
         df_long
-        .groupby("Category")["Score_TEMP"]
+        .groupby("Category")["Marks"]
         .mean()
         .sort_values(ascending=False)
     )
@@ -1111,127 +915,23 @@ with tab4:
 - Week 5: Re-assessment  
 """)
 
-# =====================================================
-# AI INSIGHTS CACHE (RUN LLM CALL ONCE)
-# =====================================================
-@st.cache_data(ttl=3600)  # cache for 1 hour
-def get_ai_insights(prompt):
-
-    if not client:
-        return "⚠ API key not configured."
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
-        )
-
-        return response.choices[0].message.content
-
-    except Exception as e:
-        return f"⚠ AI Error: {str(e)}"
-
-
 
 # =========================================================
-# AI INSIGHTS (FINAL – NO MELT CONFLICT EVER)
+# AI INSIGHTS
 # =========================================================
 with tab5:
 
-    st.subheader("🤖 AI Insights (Institution-Level)")
+    st.subheader("🤖 AI Insights")
 
-    df_ai = df_valid.copy()
+    completion = df_valid["completed"].mean()*100
+    avg_delay = df_valid["delay_minutes"].mean()
 
-    # SAFE TOTAL SCORE COLUMN
-    df_ai["Total_Score_AI"] = pd.to_numeric(df_ai[COL_TOTAL], errors="coerce")
-
-    total_participants = df_ai[COL_UID].nunique()
-    completion_rate = df_ai["completed"].mean() * 100
-    avg_score = df_ai["Total_Score_AI"].mean()
-    avg_delay = df_ai["delay_minutes"].mean()
-
-    # =====================================================
-    # SAFE MELT (UNIQUE COLUMN NAMES)
-    # =====================================================
-    cat_cols = df_ai.columns[5:30]
-
-    df_long = df_ai.melt(
-        id_vars=[COL_UID],
-        value_vars=cat_cols,
-        var_name="Category_AI_TEMP",
-        value_name="Score_AI_TEMP"
-    )
-
-    df_long["Score_AI_TEMP"] = pd.to_numeric(df_long["Score_AI_TEMP"], errors="coerce")
-    df_long = df_long.dropna(subset=["Score_AI_TEMP"])
-    df_long = df_long[df_long["Score_AI_TEMP"] > 0]
-
-    # =====================================================
-    # COVERAGE + WEAK AREAS
-    # =====================================================
-    coverage = (
-        len(df_long["Category_AI_TEMP"].unique()) / len(cat_cols) * 100
-        if len(cat_cols) else 0
-    )
-
-    weak_areas = (
-        df_long.groupby("Category_AI_TEMP")["Score_AI_TEMP"]
-        .mean()
-        .sort_values()
-        .head(5)
-        .to_dict()
-    )
-
-    # =====================================================
-    # PROMPT
-    # =====================================================
-    prompt = f"""
-You are an academic analytics expert.
-
-Institutional Assessment Summary:
-
-- Participants: {total_participants}
-- Completion Rate: {completion_rate:.2f}%
-- Average Score: {avg_score:.2f}
-- Avg Delay: {avg_delay:.2f} mins
-- Coverage: {coverage:.2f}%
-
-Weak Areas:
-{weak_areas}
-
-Provide:
-1. Key Challenges
-2. Root Causes
-3. Strategic Recommendations
-
-Keep it crisp, executive-level.
-"""
-
-    # =====================================================
-    # REGENERATE BUTTON
-    # =====================================================
-    if st.button("🔄 Regenerate Insights"):
-        st.cache_data.clear()
-
-    # =====================================================
-    # CALL AI (SAFE)
-    # =====================================================
-    if client:
-        insights = get_ai_insights(prompt)
-        st.markdown(insights)
-    else:
-        st.warning("⚠ OpenAI API key not found. Showing fallback insights.")
-
-    # =====================================================
-    # FALLBACK METRICS
-    # =====================================================
-    with st.expander("📊 Data Snapshot"):
-        st.markdown(f"""
-- Participants: {total_participants}
-- Completion Rate: {completion_rate:.2f}%
-- Avg Score: {avg_score:.2f}
-- Coverage: {coverage:.2f}%
+    st.markdown(f"""
+- 🚀 Participation momentum was strong with **{completion:.1f}% completion rate**
+- ⏱ Submission efficiency is **{'high' if avg_delay < 30 else 'moderate'}**
+- 🔥 Peak activity window suggests optimal engagement timing
+- 📊 Performance distribution indicates a healthy competitive spread
+- 🎯 Overall, the event execution shows **high engagement + efficient completion behavior**
 """)
 
 # =========================================================
@@ -1296,12 +996,12 @@ with tab6:
         id_vars=[AAT_UID],
         value_vars=cat_cols,
         var_name="Category",
-        value_name="Score_TEMP"
+        value_name="Marks"
     )
 
-    df_long["Score_TEMP"] = pd.to_numeric(df_long["Score_TEMP"], errors="coerce")
-    df_long = df_long.dropna(subset=["Score_TEMP"])
-    df_long = df_long[df_long["Score_TEMP"] > 0]
+    df_long["Marks"] = pd.to_numeric(df_long["Marks"], errors="coerce")
+    df_long = df_long.dropna(subset=["Marks"])
+    df_long = df_long[df_long["Marks"] > 0]
 
     if not df_long.empty:
         df_long["Category"] = df_long["Category"].astype(str).str.strip()
@@ -1350,12 +1050,14 @@ with tab6:
                 id_vars=[AAT_UID],
                 value_vars=cat_cols,
                 var_name="Category",
-                value_name="Score_TEMP"
+                value_name="Marks"
             )
 
-            df_long["Score_TEMP"] = pd.to_numeric(df_long["Score_TEMP"], errors="coerce")
-            df_long = df_long.dropna(subset=["Score_TEMP"])
-            df_long = df_long[df_long["Score_TEMP"] > 0]
+            df_long["Category"] = df_long["Category"].astype(str).str.strip()
+            df_long["Marks"] = pd.to_numeric(df_long["Marks"], errors="coerce")
+
+            df_long = df_long.dropna(subset=["Marks"])
+            df_long = df_long[df_long["Marks"] > 0]
 
             if df_long.empty:
                 st.warning("No data available for heatmap")
@@ -1369,12 +1071,12 @@ with tab6:
 
                 pivot = (
                     df_long
-                    .groupby(["RBT", "Type"])["Score_TEMP"]
+                    .groupby(["RBT", "Type"])["Marks"]
                     .mean()
                     .reset_index()
                 )
 
-                heatmap = pivot.pivot(index="RBT", columns="Type", values="Score_TEMP")
+                heatmap = pivot.pivot(index="RBT", columns="Type", values="Marks")
 
                 RBT_ORDER = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"]
                 TYPE_ORDER = ["MCQ", "Conceptual", "Numerical", "Scenario"]
@@ -1428,7 +1130,7 @@ with tab6:
     if not df_long.empty:
 
         avg_scores = (
-            df_long.groupby("Category")["Score_TEMP"]
+            df_long.groupby("Category")["Marks"]
             .mean()
             .sort_values(ascending=False)
         )
